@@ -1,7 +1,6 @@
 <template>
   <div class="container mx-auto flex flex-col items-center bg-gray-100 p-4">
-    <div class="fixed w-100 h-100 opacity-80 bg-purple-800 inset-0 z-50 flex items-center justify-center"
-         style="display: none">
+    <div v-if="loader" class="fixed w-100 h-100 opacity-80 bg-purple-800 inset-0 z-50 flex items-center justify-center">
       <svg class="animate-spin -ml-1 mr-3 h-12 w-12 text-white" xmlns="http://www.w3.org/2000/svg" fill="none"
            viewBox="0 0 24 24">
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -27,25 +26,17 @@
                   placeholder="Например DOGE"
               />
             </div>
-            <div class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap">
-            <span
+            <div v-if="ticker.length"
+                class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap">
+              <span
+                  v-for="(coin, idx) in coinsFilteredList"
+                  :key="idx"
+                  @click="helperClick(coin)"
                 class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-              BTC
-            </span>
-              <span
-                  class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-              DOGE
-            </span>
-              <span
-                  class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-              BCH
-            </span>
-              <span
-                  class="inline-flex items-center px-2 m-1 rounded-md text-xs font-medium bg-gray-300 text-gray-800 cursor-pointer">
-              CHD
+              {{ coin }}
             </span>
             </div>
-            <div class="text-sm text-red-600">Такой тикер уже добавлен</div>
+            <div v-if="statusLabel" class="text-sm text-red-600">{{ statusLabel }}</div>
           </div>
         </div>
         <button
@@ -160,7 +151,7 @@
 </template>
 
 <script>
-
+import _ from 'lodash';
 export default {
   name: 'App',
   data() {
@@ -169,31 +160,67 @@ export default {
       tickers: [],
       sel:null,
       graph: [],
+      loader: true,
+      coinList:[],
+      coinsFilteredList: [],
+      timerId : [],
+      statusLabel: null,
     }
   },
+  created: async function() {
+    const f = await fetch(`https://min-api.cryptocompare.com/data/blockchain/list?api_key=50c624fcdf56a8f57d674645c130e6f13de9a2c039d81f045ed6c0275c5fc6ff`);
+    this.coinList = Object.keys((await f.json()).Data);
+    this.loader = false;
+    this.debouncedGetAnswer = _.debounce(this.lodashFunc, 500);
+  },
   methods: {
+    lodashFunc() {
+      // console.log(this.coinList);
+      this.coinsFilteredList = this.coinList?.filter(el => el.startsWith(this.ticker.toUpperCase())).slice(0,4);
+      if (!this.coinsFilteredList.length){
+        this.statusLabel="Такого тикера не существует"
+      }else{
+        this.statusLabel = null;
+      }
+    },
+    helperClick(a) {
+      this.ticker = a;
+      this.add(a);
+    },
     add() {
-      const currentTicker = {name: this.ticker, price: '-'};
-      this.tickers.push(currentTicker);
-      this.ticker='';
-      setInterval(async ()=>{
-        const f = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=50c624fcdf56a8f57d674645c130e6f13de9a2c039d81f045ed6c0275c5fc6ff`);
-        const data = await f.json();
-        // this.tickers.find(t => t.name === currentTicker.name).price = data.USD;
-        currentTicker.price = data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
-        if (this.sel?.name === currentTicker.name){
-          this.graph.push(data.USD)
-        }
+      if (!this.coinList.filter(el => el == this.ticker.toUpperCase()).length) {
+        console.log(this.coinList.filter(el => el == this.ticker.toUpperCase()).length);
+        console.log("нет такого");
+      } else {
+        // this.tickers.filter(el => console.log(el.name, "  ", this.ticker.toUpperCase()));
+        console.log(this.tickers.filter(el => el.name == this.ticker.toUpperCase()));
+        if (this.tickers.filter(el => el.name == this.ticker.toUpperCase()).length>0){
+          this.statusLabel = "Такой тикер уже добавлен";
 
-        console.log(data);
-      }, 3000)
+        }else {
+          const currentTicker = {name: this.ticker.toUpperCase(), price: '-'};
+          this.tickers.push(currentTicker);
+          this.ticker = '';
+          this.timerId[currentTicker.name] = setInterval(async () => {
+            const f = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=50c624fcdf56a8f57d674645c130e6f13de9a2c039d81f045ed6c0275c5fc6ff`);
+            const data = await f.json();
+            // this.tickers.find(t => t.name === currentTicker.name).price = data.USD;
+            currentTicker.price = data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
+            if (this.sel?.name === currentTicker.name) {
+              this.graph.push(data.USD)
+            }
+
+            console.log(data);
+          }, 3000)
+        }
+      }
     },
     handleDelete(tickerToRemove) {
       this.tickers = this.tickers.filter(t => t != tickerToRemove);
       if (tickerToRemove == this.sel) {
         this.sel=null;
       }
-      console.log(this.sel);
+      clearInterval(this.timerId[tickerToRemove.name]);
     },
     normalizeGraph(){
       const maxValue = Math.max(...this.graph);
@@ -206,6 +233,12 @@ export default {
       this.sel = ticker;
       this.graph = [];
     }
-  }
+  },
+  watch: {
+    // эта функция запускается при любом изменении вопроса
+    ticker: function () {
+      this.debouncedGetAnswer()
+    }
+  },
 }
 </script>
